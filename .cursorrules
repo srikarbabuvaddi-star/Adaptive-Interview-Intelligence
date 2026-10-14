@@ -1,0 +1,9 @@
+# Cursor Rules - Adaptive Interview Intelligence
+
+Never generate mock data, fake arrays, or sample seed scripts. All application data must pull exclusively from real user inputs, real database queries, or live external APIs.
+
+- Database operations must execute against real Cloud Firestore collections.
+- User authentication and access control must be verified server-side on every request using crypto session tokens or Firebase Admin Auth.
+- AI interview question generation, answer scoring, and report synthesis must be performed by the live Google Gemini API (`@google/genai`).
+- Never silently fall back to fabricated evaluations or fake transcripts when an external API fails. Return explicit error responses and allow safe client retry.
+- All configuration, database credentials, and API keys must be loaded from `.env`. Never hardcode secrets.

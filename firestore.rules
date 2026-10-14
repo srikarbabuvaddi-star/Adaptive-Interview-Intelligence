@@ -1,0 +1,110 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isRecruiter() {
+      return isAuthenticated() && getUserData().role == 'recruiter';
+    }
+
+    function isCandidate() {
+      return isAuthenticated() && getUserData().role == 'candidate';
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isOwner(userId) && request.resource.data.role == resource.data.role;
+      allow delete: if false; // Deletions handled via administrative backend
+    }
+
+    // --- Jobs Collection ---
+    match /jobs/{jobId} {
+      // Candidates can view published jobs; Recruiters can view their own
+      allow read: if isAuthenticated() && (
+        resource.data.status == 'published' ||
+        resource.data.recruiterId == request.auth.uid
+      );
+      allow create: if isRecruiter() && request.resource.data.recruiterId == request.auth.uid;
+      allow update, delete: if isRecruiter() && resource.data.recruiterId == request.auth.uid;
+    }
+
+    // --- Applications Collection ---
+    match /applications/{applicationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.candidateId == request.auth.uid ||
+        resource.data.recruiterId == request.auth.uid
+      );
+      allow create: if isCandidate() && request.resource.data.candidateId == request.auth.uid;
+      allow update: if isRecruiter() && resource.data.recruiterId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // --- Interviews Collection ---
+    match /interviews/{interviewId} {
+      allow read: if isAuthenticated() && (
+        resource.data.candidateId == request.auth.uid ||
+        resource.data.recruiterId == request.auth.uid
+      );
+      // Interview state transitions are managed securely through server backend API
+      allow write: if false;
+    }
+
+    // --- Questions, Answers, Evaluations & Proctoring ---
+    match /interview_questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Server-controlled only
+    }
+
+    match /interview_answers/{answerId} {
+      allow read: if isAuthenticated() && (
+        resource.data.candidateId == request.auth.uid ||
+        isRecruiter()
+      );
+      allow write: if false; // Server-controlled only
+    }
+
+    match /skill_evaluations/{evalId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Server-controlled only
+    }
+
+    match /integrity_events/{eventId} {
+      allow read: if isAuthenticated() && (
+        resource.data.candidateId == request.auth.uid ||
+        isRecruiter()
+      );
+      allow write: if false; // Server-controlled only
+    }
+
+    // --- Reports Collections ---
+    match /interview_reports/{reportId} {
+      allow read: if isAuthenticated() && (
+        resource.data.candidateId == request.auth.uid ||
+        resource.data.recruiterId == request.auth.uid
+      );
+      allow write: if false; // Server-generated only
+    }
+
+    match /skill_gap_reports/{gapReportId} {
+      allow read: if isAuthenticated() && (
+        resource.data.candidateId == request.auth.uid ||
+        isRecruiter()
+      );
+      allow write: if false; // Server-generated only
+    }
+  }
+}
