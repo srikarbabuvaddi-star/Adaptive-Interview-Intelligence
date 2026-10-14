@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import HomeScreen from './components/HomeScreen';
 import CandidateDashboard from './components/CandidateDashboard';
 import CandidateProfileScreen from './components/CandidateProfileScreen';
+import JobExplorerScreen from './components/JobExplorerScreen';
 import JobSelector from './components/JobSelector';
 import VoiceInterviewScreen from './components/VoiceInterviewScreen';
 import FinalReportScreen from './components/FinalReportScreen';
@@ -12,7 +13,7 @@ import AuthModal from './components/AuthModal';
 
 const MainApp = () => {
   const { user } = useAuth();
-  // Views: 'HOME' | 'CANDIDATE_PORTAL' | 'PROFILE' | 'SELECT_JOB' | 'INTERVIEW' | 'RECRUITER_PORTAL' | 'REPORT'
+  // Views: 'HOME' | 'CANDIDATE_PORTAL' | 'PROFILE' | 'JOB_EXPLORER' | 'SELECT_JOB' | 'INTERVIEW' | 'RECRUITER_PORTAL' | 'REPORT'
   const [view, setView] = useState('HOME');
   const [selectedJob, setSelectedJob] = useState(null);
   const [activeInterview, setActiveInterview] = useState(null);
@@ -80,6 +81,7 @@ const MainApp = () => {
       <Navbar
         currentView={view}
         onNavigateHome={() => setView('HOME')}
+        onNavigateExplorer={() => setView('JOB_EXPLORER')}
         onNavigateDashboard={() => setView('CANDIDATE_PORTAL')}
         onNavigateProfile={() => setView('PROFILE')}
         onNavigateJobs={() => setView('SELECT_JOB')}
@@ -95,6 +97,7 @@ const MainApp = () => {
         {view === 'HOME' && (
           <HomeScreen
             onStartInterview={() => setView('INTERVIEW')}
+            onNavigateExplorer={() => setView('JOB_EXPLORER')}
             onExploreRecruiter={() => setView('RECRUITER_PORTAL')}
             onCandidateSetup={() => setView('PROFILE')}
             onSelectRole={(roleTitle) => {
@@ -116,7 +119,15 @@ const MainApp = () => {
               setCompletedInterviewId(interviewId);
               setView('REPORT');
             }}
-            onBrowseJobs={() => setView('SELECT_JOB')}
+            onBrowseJobs={() => setView('JOB_EXPLORER')}
+            onNavigateProfile={() => setView('PROFILE')}
+            onOpenAuthModal={handleOpenAuthForRole}
+          />
+        )}
+
+        {view === 'JOB_EXPLORER' && (
+          <JobExplorerScreen
+            onStartInterview={handleStartInterviewSession}
             onNavigateProfile={() => setView('PROFILE')}
             onOpenAuthModal={handleOpenAuthForRole}
           />
@@ -124,7 +135,7 @@ const MainApp = () => {
 
         {view === 'PROFILE' && (
           <CandidateProfileScreen
-            onNavigateJobs={() => setView('SELECT_JOB')}
+            onNavigateJobs={() => setView('JOB_EXPLORER')}
             onNavigateDashboard={() => setView('CANDIDATE_PORTAL')}
             onOpenAuthModal={handleOpenAuthForRole}
           />

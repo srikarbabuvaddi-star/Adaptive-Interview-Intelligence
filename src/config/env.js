@@ -26,6 +26,14 @@ const env = {
 
   JWT_SECRET: process.env.JWT_SECRET || '',
 
+  // Job Market Data Providers (JSearch / Adzuna)
+  JOB_DATA_PROVIDER: process.env.JOB_DATA_PROVIDER || 'jsearch',
+  JSEARCH_API_KEY: process.env.JSEARCH_API_KEY || '',
+  JSEARCH_API_HOST: process.env.JSEARCH_API_HOST || 'jsearch.p.rapidapi.com',
+  ADZUNA_APP_ID: process.env.ADZUNA_APP_ID || '',
+  ADZUNA_APP_KEY: process.env.ADZUNA_APP_KEY || '',
+  JOB_CACHE_TTL_MS: parseInt(process.env.JOB_CACHE_TTL_MS, 10) || 15 * 60 * 1000, // 15 mins
+
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 mins
   RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100

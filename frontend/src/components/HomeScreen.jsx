@@ -2,6 +2,7 @@ import React from 'react';
 
 export const HomeScreen = ({
   onStartInterview,
+  onNavigateExplorer,
   onExploreRecruiter,
   onCandidateSetup,
   onSelectRole,
@@ -50,8 +51,15 @@ export const HomeScreen = ({
                   </span>
                 </button>
                 <button
+                  onClick={onNavigateExplorer}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-primary/10 border border-primary/20 text-primary font-body-md font-semibold shadow-sm hover:bg-primary/20 transition-all duration-150"
+                >
+                  <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+                  <span>Job Explorer &amp; Salaries</span>
+                </button>
+                <button
                   onClick={onExploreRecruiter}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-surface-container-low text-on-surface font-body-md font-semibold shadow-sm hover:bg-surface-container transition-all duration-150"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-surface-container-low text-on-surface font-body-md font-semibold shadow-sm hover:bg-surface-container transition-all duration-150"
                 >
                   <span className="material-symbols-outlined text-[18px] text-secondary">analytics</span>
                   <span>Explore Recruiter Portal</span>

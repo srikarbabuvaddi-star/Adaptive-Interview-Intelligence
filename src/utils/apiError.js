@@ -38,6 +38,14 @@ class ApiError extends Error {
     return new ApiError(502, message, 'AI_SERVICE_ERROR', details);
   }
 
+  static serviceUnavailable(message = 'Service temporarily unavailable', details = null) {
+    return new ApiError(503, message, 'SERVICE_UNAVAILABLE', details);
+  }
+
+  static tooManyRequests(message = 'Rate limit exceeded', details = null) {
+    return new ApiError(429, message, 'TOO_MANY_REQUESTS', details);
+  }
+
   static internal(message = 'Internal server error', details = null) {
     return new ApiError(500, message, 'INTERNAL_SERVER_ERROR', details);
   }

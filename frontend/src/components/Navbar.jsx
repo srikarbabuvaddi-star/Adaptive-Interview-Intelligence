@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 export const Navbar = ({
   currentView,
   onNavigateHome,
+  onNavigateExplorer,
   onNavigateDashboard,
   onNavigateProfile,
   onNavigateJobs,
@@ -61,6 +62,17 @@ export const Navbar = ({
               Home
             </button>
             <button
+              onClick={onNavigateExplorer}
+              className={`px-3 py-1.5 rounded-lg text-body-sm font-body-sm transition-colors flex items-center gap-1 ${
+                currentView === 'JOB_EXPLORER'
+                  ? 'bg-primary text-on-primary font-semibold shadow-sm'
+                  : 'text-primary hover:bg-primary/10 font-semibold'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">travel_explore</span>
+              <span>Job Explorer</span>
+            </button>
+            <button
               onClick={onNavigateJobs}
               className={`px-3 py-1.5 rounded-lg text-body-sm font-body-sm transition-colors ${
                 currentView === 'SELECT_JOB'
@@ -68,7 +80,7 @@ export const Navbar = ({
                   : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
               }`}
             >
-              Jobs
+              Internal Jobs
             </button>
             <button
               onClick={onNavigateDashboard}
@@ -166,6 +178,16 @@ export const Navbar = ({
                       {user.role || 'candidate'}
                     </span>
                   </div>
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      onNavigateExplorer();
+                    }}
+                    className="w-full text-left px-4 py-2 text-body-sm text-primary hover:bg-surface-container flex items-center gap-2 font-semibold"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-primary">travel_explore</span>
+                    Job Explorer &amp; Salary Intel
+                  </button>
                   <button
                     onClick={() => {
                       setUserMenuOpen(false);

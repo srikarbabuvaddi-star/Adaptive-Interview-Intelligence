@@ -8,6 +8,7 @@ const skillGapService = require('./intelligence/skillGap.service');
 const integrityService = require('./intelligence/integrity.service');
 const evidenceReportService = require('./intelligence/evidenceReport.service');
 const { validateAndSanitizeEvaluation } = require('./intelligence/rubric');
+const { agentOrchestrator } = require('./agents');
 
 class InterviewService {
   /**
@@ -333,10 +334,13 @@ class InterviewService {
       }
     }
 
-    // 1. Generate First Question via AI Service
-    logger.info(`Generating first interview question for interview ${interviewId} with AI Service`);
-    const aiService = getAIService();
-    const firstQ = await aiService.generateFirstQuestion({ job, candidateProfile });
+    // 1. Generate First Question via Interviewer Agent (Agent 1)
+    logger.info(`Generating first interview question for interview ${interviewId} with InterviewerAgent`);
+    const firstQ = await agentOrchestrator.generateFirstQuestion({
+      job,
+      candidateProfile,
+      maxQuestions: interview.totalQuestions
+    });
 
     // 2. Save First Question
     const qDocRef = getCollection(COLLECTIONS.INTERVIEW_QUESTIONS).doc();
@@ -347,6 +351,8 @@ class InterviewService {
       questionText: firstQ.questionText,
       skill: firstQ.skill,
       difficulty: firstQ.difficulty,
+      questionType: firstQ.questionType || 'scenario',
+      selectionRationale: firstQ.selectionRationale || 'Initial opening question',
       expectedConcepts: firstQ.expectedConcepts || firstQ.expectedKeyPoints || [],
       expectedKeyPoints: firstQ.expectedKeyPoints || [],
       context: firstQ.context || '',
@@ -384,242 +390,21 @@ class InterviewService {
   }
 
   /**
-   * Submits an answer for the current question, evaluates it adaptively via AI,
+   * Submits an answer for the current question, evaluates it adaptively via Multi-Agent system,
    * saves evaluation and returns either next question or completes the interview
    */
   async submitAnswer(interviewId, user, { questionId, answerText, timeTakenSeconds }) {
-    const interviewRef = getCollection(COLLECTIONS.INTERVIEWS).doc(interviewId);
-    const interviewSnap = await interviewRef.get();
-
-    if (!interviewSnap.exists) {
-      throw ApiError.notFound('Interview not found');
-    }
-    const interview = interviewSnap.data();
-
-    // Verify ownership
-    if (interview.candidateId !== user.uid) {
-      throw ApiError.forbidden('Forbidden: You can only submit answers to your own interview');
-    }
-
-    // Verify interview status
-    if (interview.status !== INTERVIEW_STATUS.IN_PROGRESS) {
-      throw ApiError.badRequest(`Interview is not in progress (Current status: ${interview.status})`);
-    }
-
-    // Verify current question match
-    if (interview.currentQuestionId !== questionId) {
-      throw ApiError.badRequest('Question ID does not match the active pending question for this interview');
-    }
-
-    // Duplicate submission protection
-    const existingAnswers = await getCollection(COLLECTIONS.INTERVIEW_ANSWERS)
-      .where('questionId', '==', questionId)
-      .get();
-
-    if (!existingAnswers.empty) {
-      throw ApiError.conflict('An answer has already been submitted for this question');
-    }
-
-    // Fetch Question data
-    const questionRef = getCollection(COLLECTIONS.INTERVIEW_QUESTIONS).doc(questionId);
-    const questionSnap = await questionRef.get();
-    if (!questionSnap.exists) {
-      throw ApiError.notFound('Question not found');
-    }
-    const currentQuestion = questionSnap.data();
-
-    // Fetch Job data
-    const jobSnap = await getCollection(COLLECTIONS.JOBS).doc(interview.jobId).get();
-    const job = jobSnap.data();
-
-    // 1. Save Answer
-    const answerRef = getCollection(COLLECTIONS.INTERVIEW_ANSWERS).doc();
-    const answerRecord = {
-      id: answerRef.id,
+    return agentOrchestrator.processAnswerAndDetermineNextStep({
       interviewId,
+      user,
       questionId,
-      candidateId: user.uid,
       answerText,
-      timeTakenSeconds: timeTakenSeconds || 30,
-      submittedAt: toTimestamp()
-    };
-    await answerRef.set(answerRecord);
-
-    // 2. Fetch history of previous Q&As for AI context
-    const allQuestionsSnap = await getCollection(COLLECTIONS.INTERVIEW_QUESTIONS)
-      .where('interviewId', '==', interviewId)
-      .get();
-    const allQuestions = allQuestionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    const allAnswersSnap = await getCollection(COLLECTIONS.INTERVIEW_ANSWERS)
-      .where('interviewId', '==', interviewId)
-      .get();
-    const allAnswers = allAnswersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    const previousQA = allQuestions.map(q => {
-      const a = allAnswers.find(ans => ans.questionId === q.id);
-      return {
-        question: q.questionText,
-        skill: q.skill,
-        difficulty: q.difficulty,
-        answer: a?.answerText || ''
-      };
+      timeTakenSeconds
     });
-
-    // 3. Evaluate answer and adapt next question using AI Service
-    const aiService = getAIService();
-    const candidateProfile = interview.candidateProfileSnapshot || user.candidateProfile || {};
-    const aiResult = await aiService.evaluateAnswerAndGenerateNextQuestion({
-      job,
-      currentQuestion,
-      answer: answerText,
-      previousQA,
-      candidateProfile,
-      skillScores: interview.adaptiveState?.skillScores || {},
-      skillStats: interview.adaptiveState?.skillStats || {},
-      questionIndex: interview.currentQuestionIndex,
-      maxQuestions: interview.totalQuestions
-    });
-
-    // 4. Validate and Sanitize AI evaluation against rubric rules
-    const sanitizedEval = validateAndSanitizeEvaluation(aiResult.evaluation, currentQuestion);
-
-    // Save Skill Evaluation with Deterministic Concepts & Evidence
-    const evalRef = getCollection(COLLECTIONS.SKILL_EVALUATIONS).doc();
-    const evaluationRecord = {
-      id: evalRef.id,
-      interviewId,
-      questionId,
-      answerId: answerRef.id,
-      skill: currentQuestion.skill,
-      score: sanitizedEval.score,
-      feedback: sanitizedEval.feedback,
-      strengths: sanitizedEval.strengths,
-      weaknesses: sanitizedEval.weaknesses,
-      conceptualAccuracy: sanitizedEval.conceptualAccuracy,
-      depthScore: sanitizedEval.depthScore,
-      communicationScore: sanitizedEval.communicationScore,
-      correctnessScore: aiResult.evaluation?.correctnessScore ?? Math.round(sanitizedEval.score * 10),
-      completenessScore: aiResult.evaluation?.completenessScore ?? Math.round(sanitizedEval.score * 10),
-      compositeScore: aiResult.evaluation?.compositeScore ?? Math.round(sanitizedEval.score * 10),
-      status: aiResult.evaluation?.status || (sanitizedEval.score >= 7.5 ? 'correct' : (sanitizedEval.score >= 4 ? 'partially_correct' : 'incorrect_or_unclear')),
-      matchedConcepts: aiResult.evaluation?.matchedConcepts || [],
-      missingConcepts: aiResult.evaluation?.missingConcepts || [],
-      evidence: aiResult.evaluation?.evidence || [],
-      evaluatedAt: toTimestamp()
-    };
-    await evalRef.set(evaluationRecord);
-
-    // Update per-skill stats
-    const currentSkillStats = { ...(interview.adaptiveState?.skillStats || {}) };
-    const currSkill = currentQuestion.skill;
-    if (!currentSkillStats[currSkill]) {
-      currentSkillStats[currSkill] = { questions_asked: 0, consecutive: 0, difficulty: currentQuestion.difficulty || 'intermediate' };
-    }
-    currentSkillStats[currSkill].questions_asked += 1;
-    currentSkillStats[currSkill].consecutive += 1;
-    for (const s of Object.keys(currentSkillStats)) {
-      if (s !== currSkill) currentSkillStats[s].consecutive = 0;
-    }
-    if (aiResult.nextQuestion?.difficulty && aiResult.adaptiveDecision?.nextSkill === currSkill) {
-      currentSkillStats[currSkill].difficulty = aiResult.nextQuestion.difficulty;
-    }
-
-    const isInterviewComplete =
-      Boolean(aiResult.isInterviewComplete) ||
-      interview.currentQuestionIndex >= interview.totalQuestions ||
-      !aiResult.nextQuestion;
-
-    if (!isInterviewComplete && aiResult.nextQuestion) {
-      // 5A. Save Next Question with concepts & adaptive lineage
-      const nextQRef = getCollection(COLLECTIONS.INTERVIEW_QUESTIONS).doc();
-      const nextQuestionRecord = {
-        id: nextQRef.id,
-        interviewId,
-        questionIndex: interview.currentQuestionIndex + 1,
-        questionText: aiResult.nextQuestion.questionText,
-        skill: aiResult.nextQuestion.skill,
-        difficulty: aiResult.nextQuestion.difficulty,
-        expectedConcepts: aiResult.nextQuestion.expectedConcepts || aiResult.nextQuestion.expectedKeyPoints || [],
-        expectedKeyPoints: aiResult.nextQuestion.expectedKeyPoints || [],
-        adaptiveAction: aiResult.adaptiveDecision?.action || null,
-        adaptiveReason: aiResult.adaptiveDecision?.reason || null,
-        context: aiResult.nextQuestion.context || '',
-        timeLimitSeconds: 180,
-        askedAt: toTimestamp()
-      };
-      await nextQRef.set(nextQuestionRecord);
-
-      // Update interview state
-      await interviewRef.update({
-        currentQuestionIndex: interview.currentQuestionIndex + 1,
-        currentQuestionId: nextQRef.id,
-        adaptiveState: {
-          currentDifficulty: aiResult.nextQuestion.difficulty,
-          skillScores: aiResult.updatedSkillScores,
-          skillStats: currentSkillStats,
-          topicsCovered: [
-            ...(interview.adaptiveState?.topicsCovered || []),
-            currentQuestion.skill
-          ]
-        },
-        updatedAt: toTimestamp()
-      });
-
-      return {
-        isInterviewComplete: false,
-        evaluation: {
-          score: aiResult.evaluation.score,
-          compositeScore: evaluationRecord.compositeScore,
-          correctnessScore: evaluationRecord.correctnessScore,
-          completenessScore: evaluationRecord.completenessScore,
-          status: evaluationRecord.status,
-          matchedConcepts: evaluationRecord.matchedConcepts,
-          missingConcepts: evaluationRecord.missingConcepts,
-          evidence: evaluationRecord.evidence,
-          feedback: aiResult.evaluation.feedback,
-          strengths: aiResult.evaluation.strengths,
-          weaknesses: aiResult.evaluation.weaknesses
-        },
-        adaptiveDecision: aiResult.adaptiveDecision,
-        nextQuestion: {
-          id: nextQRef.id,
-          questionIndex: interview.currentQuestionIndex + 1,
-          totalQuestions: interview.totalQuestions,
-          questionText: aiResult.nextQuestion.questionText,
-          skill: aiResult.nextQuestion.skill,
-          difficulty: aiResult.nextQuestion.difficulty,
-          timeLimitSeconds: 180
-        }
-      };
-    } else {
-      // 5B. Interview is completed -> Finalize interview and generate report
-      const report = await this._finalizeInterviewAndGenerateReport(interviewId, interview, job);
-
-      return {
-        isInterviewComplete: true,
-        evaluation: {
-          score: aiResult.evaluation.score,
-          compositeScore: evaluationRecord.compositeScore,
-          correctnessScore: evaluationRecord.correctnessScore,
-          completenessScore: evaluationRecord.completenessScore,
-          status: evaluationRecord.status,
-          matchedConcepts: evaluationRecord.matchedConcepts,
-          missingConcepts: evaluationRecord.missingConcepts,
-          evidence: evaluationRecord.evidence,
-          feedback: aiResult.evaluation.feedback,
-          strengths: aiResult.evaluation.strengths,
-          weaknesses: aiResult.evaluation.weaknesses
-        },
-        message: 'Interview session completed. Comprehensive reports have been generated.',
-        reportId: report.id,
-        overallScore: report.overallScore
-      };
-    }
   }
 
   /**
-   * Concludes an interview and triggers report generation
+   * Concludes an interview and triggers report generation via Agent Orchestrator
    */
   async endInterview(interviewId, user, { reason = 'candidate_completed' } = {}) {
     const interviewRef = getCollection(COLLECTIONS.INTERVIEWS).doc(interviewId);
@@ -641,7 +426,12 @@ class InterviewService {
     const jobSnap = await getCollection(COLLECTIONS.JOBS).doc(interview.jobId).get();
     const job = jobSnap.data();
 
-    const report = await this._finalizeInterviewAndGenerateReport(interviewId, interview, job, reason);
+    const report = await agentOrchestrator.finalizeInterviewSession({
+      interviewId,
+      user,
+      job,
+      reason
+    });
 
     return {
       message: 'Interview session ended successfully',

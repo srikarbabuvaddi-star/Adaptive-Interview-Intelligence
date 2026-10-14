@@ -262,6 +262,34 @@ export const interviewApi = {
       : `/api/resumes/candidate/${candidateId}/download`;
     const res = await apiClient.get(url, { responseType: 'blob' });
     return res.data;
+  },
+
+  // Job Explorer & Market Salary Intelligence
+  async searchMarketJobs(params = {}) {
+    const res = await apiClient.get('/api/job-explorer/search', { params });
+    return res.data?.data;
+  },
+
+  async getMarketJobDetails(jobId, provider) {
+    const res = await apiClient.get(`/api/job-explorer/jobs/${jobId}`, {
+      params: provider ? { provider } : {}
+    });
+    return res.data?.data;
+  },
+
+  async getMarketSalaryBenchmark(params = {}) {
+    const res = await apiClient.get('/api/job-explorer/salary-benchmark', { params });
+    return res.data?.data;
+  },
+
+  async compareResumeWithJob(jobData) {
+    const res = await apiClient.post('/api/job-explorer/compare-skills', { jobData });
+    return res.data?.data;
+  },
+
+  async prepareMarketJobInterview(jobData) {
+    const res = await apiClient.post('/api/job-explorer/prepare-interview', { jobData });
+    return res.data?.data;
   }
 };
 

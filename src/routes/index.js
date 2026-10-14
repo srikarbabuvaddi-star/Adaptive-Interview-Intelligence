@@ -6,6 +6,8 @@ const applicationRoutes = require('./application.routes');
 const interviewRoutes = require('./interview.routes');
 const reportRoutes = require('./report.routes');
 const resumeRoutes = require('./resume.routes');
+const jobExplorerRoutes = require('./jobExplorer.routes');
+const mcpRoutes = require('../mcp/routes');
 const ApiResponse = require('../utils/apiResponse');
 
 const router = express.Router();
@@ -28,5 +30,7 @@ router.use('/applications', applicationRoutes);
 router.use('/interviews', interviewRoutes);
 router.use('/reports', reportRoutes);
 router.use('/resumes', resumeRoutes);
+router.use('/job-explorer', jobExplorerRoutes);
+router.use('/mcp', mcpRoutes);
 
 module.exports = router;
