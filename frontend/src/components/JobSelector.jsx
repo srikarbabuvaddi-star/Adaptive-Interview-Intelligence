@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import interviewApi from '../services/interviewApi';
 import { useAuth } from '../context/AuthContext';
 
-export const JobSelector = ({ onSelectJob, onSelectInterview, onOpenAuthModal }) => {
+export const JobSelector = ({ onSelectJob, onSelectInterview, onOpenAuthModal, onNavigateProfile }) => {
   const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [existingInterviews, setExistingInterviews] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [activeResume, setActiveResume] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -36,14 +37,16 @@ export const JobSelector = ({ onSelectJob, onSelectInterview, onOpenAuthModal })
     setLoading(true);
     setError(null);
     try {
-      const [jobsData, interviewsData, appsData] = await Promise.all([
+      const [jobsData, interviewsData, appsData, resumeData] = await Promise.all([
         interviewApi.listJobs(),
         user ? interviewApi.listInterviews() : Promise.resolve([]),
-        user && user.role === 'candidate' ? interviewApi.getMyApplications() : Promise.resolve([])
+        user && user.role === 'candidate' ? interviewApi.getMyApplications() : Promise.resolve([]),
+        user && user.role === 'candidate' ? interviewApi.getMyResume().catch(() => null) : Promise.resolve(null)
       ]);
       setJobs(jobsData || []);
       setExistingInterviews(interviewsData || []);
       setApplications(appsData || []);
+      setActiveResume(resumeData);
       if (jobsData && jobsData.length > 0 && !inspectedJob) {
         setInspectedJob(jobsData[0]);
       }
@@ -110,9 +113,20 @@ export const JobSelector = ({ onSelectJob, onSelectInterview, onOpenAuthModal })
       }
       return;
     }
-    const defaultSkills = (inspectedJob?.requiredSkills || [])
-      .map((s) => (typeof s === 'string' ? s : s.name))
-      .join(', ');
+
+    if (user.role === 'candidate' && !activeResume) {
+      if (onNavigateProfile) {
+        onNavigateProfile();
+        return;
+      }
+    }
+
+    const defaultSkills = (activeResume?.extractedProfile?.skills && activeResume.extractedProfile.skills.length > 0)
+      ? activeResume.extractedProfile.skills.join(', ')
+      : (inspectedJob?.requiredSkills || [])
+          .map((s) => (typeof s === 'string' ? s : s.name))
+          .join(', ');
+
     setApplySkills(defaultSkills);
     setApplyCoverNote('');
     setApplyResumeUrl('');
@@ -311,6 +325,57 @@ export const JobSelector = ({ onSelectJob, onSelectInterview, onOpenAuthModal })
 
                   {/* Action Panel */}
                   <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0 lg:w-72">
+                    {/* Active Resume Status for Candidates */}
+                    {!isRecruiter && user?.role === 'candidate' && (
+                      activeResume ? (
+                        <div className="p-3.5 rounded-xl bg-primary/5 border border-primary/20 space-y-1.5 text-left">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-primary flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[15px]">description</span>
+                              <span>Saved Profile Resume</span>
+                            </span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                              v{activeResume.currentVersion || 1}
+                            </span>
+                          </div>
+                          <p className="text-xs font-semibold text-on-surface truncate">
+                            {activeResume.originalName || activeResume.filename}
+                          </p>
+                          <div className="flex items-center justify-between pt-1 border-t border-outline-variant/20">
+                            <span className="text-[11px] text-secondary">
+                              {(activeResume.extractedProfile?.skills || []).length} skills linked
+                            </span>
+                            {onNavigateProfile && (
+                              <button
+                                onClick={onNavigateProfile}
+                                className="text-[11px] text-primary hover:underline font-semibold"
+                              >
+                                Update
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-left">
+                          <div className="flex items-center gap-1.5 text-amber-700 font-bold text-xs">
+                            <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                            <span>Resume Required</span>
+                          </div>
+                          <p className="text-[11px] text-secondary leading-snug">
+                            Please upload your resume once in your Profile to unlock personalized adaptive questions and instant job applications.
+                          </p>
+                          {onNavigateProfile && (
+                            <button
+                              onClick={onNavigateProfile}
+                              className="w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1 shadow-xs"
+                            >
+                              <span>Upload Resume in Profile</span>
+                            </button>
+                          )}
+                        </div>
+                      )
+                    )}
+
                     {/* Application Status Banner if applied */}
                     {existingApp && (
                       <div className="p-3 rounded-lg bg-surface-container-low border border-primary/30 space-y-1 text-left">
@@ -339,18 +404,34 @@ export const JobSelector = ({ onSelectJob, onSelectInterview, onOpenAuthModal })
                       </button>
                     ) : (
                       <button
-                        onClick={() => onSelectJob(inspectedJob)}
+                        onClick={() => {
+                          if (user?.role === 'candidate' && !activeResume) {
+                            if (onNavigateProfile) {
+                              onNavigateProfile();
+                              return;
+                            }
+                          }
+                          onSelectJob(inspectedJob);
+                        }}
                         className="w-full h-11 px-6 rounded-lg bg-primary-container text-on-primary font-body-md text-body-md font-semibold shadow-sm hover:bg-primary transition-all flex items-center justify-center gap-2"
                       >
                         <span className="material-symbols-outlined text-[18px]">bolt</span>
-                        <span>Start Adaptive Interview</span>
+                        <span>{user?.role === 'candidate' && !activeResume ? 'Upload Resume to Interview' : 'Start Adaptive Interview'}</span>
                       </button>
                     )}
 
                     {/* Apply for Position Button (for candidates who haven't applied yet) */}
                     {!isRecruiter && !existingApp && (
                       <button
-                        onClick={handleOpenApplyModal}
+                        onClick={() => {
+                          if (user?.role === 'candidate' && !activeResume) {
+                            if (onNavigateProfile) {
+                              onNavigateProfile();
+                              return;
+                            }
+                          }
+                          handleOpenApplyModal();
+                        }}
                         className="w-full h-11 px-6 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-body-md text-body-md font-semibold transition-all flex items-center justify-center gap-2 border border-outline-variant/30"
                       >
                         <span className="material-symbols-outlined text-[18px]">send</span>
@@ -612,6 +693,39 @@ export const JobSelector = ({ onSelectJob, onSelectInterview, onOpenAuthModal })
               <div className="p-3 rounded-lg bg-primary-fixed/30 border border-primary text-primary font-semibold flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px]">check_circle</span>
                 <span className="text-body-sm">{applySuccess}</span>
+              </div>
+            )}
+
+            {activeResume && (
+              <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-primary text-[22px]">description</span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-on-surface">
+                        {activeResume.originalName || activeResume.filename}
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-primary/10 text-primary">
+                        v{activeResume.currentVersion || 1}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-secondary">
+                      Saved resume will be linked automatically
+                    </span>
+                  </div>
+                </div>
+                {onNavigateProfile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplyModalOpen(false);
+                      onNavigateProfile();
+                    }}
+                    className="text-xs text-primary hover:underline font-semibold"
+                  >
+                    Change
+                  </button>
+                )}
               </div>
             )}
 

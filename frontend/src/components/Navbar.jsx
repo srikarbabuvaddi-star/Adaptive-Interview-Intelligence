@@ -5,6 +5,7 @@ export const Navbar = ({
   currentView,
   onNavigateHome,
   onNavigateDashboard,
+  onNavigateProfile,
   onNavigateJobs,
   onNavigateInterview,
   onNavigateRecruiter,
@@ -78,6 +79,16 @@ export const Navbar = ({
               }`}
             >
               Candidate Portal
+            </button>
+            <button
+              onClick={onNavigateProfile}
+              className={`px-3 py-1.5 rounded-lg text-body-sm font-body-sm transition-colors ${
+                currentView === 'PROFILE'
+                  ? 'bg-secondary-container text-on-surface font-semibold'
+                  : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+              }`}
+            >
+              Resume &amp; Profile
             </button>
             <button
               onClick={onNavigateInterview}
@@ -155,6 +166,16 @@ export const Navbar = ({
                       {user.role || 'candidate'}
                     </span>
                   </div>
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      onNavigateProfile();
+                    }}
+                    className="w-full text-left px-4 py-2 text-body-sm text-on-surface hover:bg-surface-container flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-secondary">description</span>
+                    Resume &amp; Profile
+                  </button>
                   <button
                     onClick={() => {
                       setUserMenuOpen(false);

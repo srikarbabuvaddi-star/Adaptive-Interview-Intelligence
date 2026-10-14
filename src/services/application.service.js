@@ -29,7 +29,25 @@ class ApplicationService {
       throw ApiError.conflict('You have already applied for this position');
     }
 
-    // 3. Create application
+    // 3. Automatically link active saved resume and extracted skills
+    let activeResumeSnapshot = null;
+    let skillsList = candidateSkills || [];
+
+    const resumeSnap = await getCollection(COLLECTIONS.RESUMES).doc(candidateId).get();
+    if (resumeSnap.exists) {
+      const resumeData = resumeSnap.data();
+      activeResumeSnapshot = {
+        resumeId: candidateId,
+        resumeVersion: resumeData.currentVersion || 1,
+        filename: resumeData.originalName || resumeData.filename,
+        uploadedAt: resumeData.updatedAt || resumeData.createdAt
+      };
+      if (skillsList.length === 0 && Array.isArray(resumeData.extractedProfile?.skills)) {
+        skillsList = resumeData.extractedProfile.skills;
+      }
+    }
+
+    // 4. Create application
     const appDocRef = appCol.doc();
     const application = {
       id: appDocRef.id,
@@ -37,8 +55,10 @@ class ApplicationService {
       candidateId,
       recruiterId: job.recruiterId,
       resumeUrl: resumeUrl || null,
+      resumeSnapshot: activeResumeSnapshot,
+      resumeVersion: activeResumeSnapshot ? activeResumeSnapshot.resumeVersion : null,
       coverNote: coverNote || '',
-      candidateSkills: candidateSkills || [],
+      candidateSkills: skillsList,
       status: APPLICATION_STATUS.PENDING,
       jobTitle: job.title,
       createdAt: toTimestamp(),

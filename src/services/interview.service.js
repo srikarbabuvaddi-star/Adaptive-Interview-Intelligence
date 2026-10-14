@@ -65,10 +65,31 @@ class InterviewService {
       throw ApiError.forbidden('Forbidden: You can only schedule interviews for jobs you manage');
     }
 
-    // 2. Fetch candidate
+    // 2. Fetch candidate and active resume profile snapshot
     const candidateSnap = await getCollection(COLLECTIONS.USERS).doc(candidateId).get();
     if (!candidateSnap.exists) {
       throw ApiError.notFound('Candidate user not found');
+    }
+    const candidateData = candidateSnap.data();
+
+    let resumeId = null;
+    let resumeVersion = null;
+    let resumeFilename = null;
+    let candidateProfileSnapshot = candidateData.candidateProfile || {};
+
+    const resumeSnap = await getCollection(COLLECTIONS.RESUMES).doc(candidateId).get();
+    if (resumeSnap.exists) {
+      const resumeData = resumeSnap.data();
+      resumeId = candidateId;
+      resumeVersion = resumeData.currentVersion || 1;
+      resumeFilename = resumeData.originalName || resumeData.filename;
+      candidateProfileSnapshot = {
+        ...candidateProfileSnapshot,
+        ...(resumeData.extractedProfile || {}),
+        resumeId,
+        resumeVersion,
+        resumeFilename
+      };
     }
 
     // 3. Prevent duplicate active interview for same job and candidate
@@ -119,6 +140,10 @@ class InterviewService {
       candidateId,
       recruiterId: job.recruiterId,
       applicationId: applicationId || null,
+      resumeId,
+      resumeVersion,
+      resumeFilename,
+      candidateProfileSnapshot,
       status: INTERVIEW_STATUS.SCHEDULED,
       currentQuestionIndex: 0,
       currentQuestionId: null,
@@ -284,7 +309,29 @@ class InterviewService {
     }
     const job = jobSnap.data();
 
-    const candidateProfile = user.candidateProfile || {};
+    // Prioritize snapshot from interview creation; fallback to active candidate resume or user profile
+    let candidateProfile = interview.candidateProfileSnapshot || user.candidateProfile || {};
+    let resumeUpdates = {};
+
+    if (!interview.candidateProfileSnapshot) {
+      const resumeSnap = await getCollection(COLLECTIONS.RESUMES).doc(user.uid).get();
+      if (resumeSnap.exists) {
+        const rData = resumeSnap.data();
+        candidateProfile = {
+          ...candidateProfile,
+          ...(rData.extractedProfile || {}),
+          resumeId: user.uid,
+          resumeVersion: rData.currentVersion || 1,
+          resumeFilename: rData.originalName || rData.filename
+        };
+        resumeUpdates = {
+          resumeId: user.uid,
+          resumeVersion: rData.currentVersion || 1,
+          resumeFilename: rData.originalName || rData.filename,
+          candidateProfileSnapshot: candidateProfile
+        };
+      }
+    }
 
     // 1. Generate First Question via AI Service
     logger.info(`Generating first interview question for interview ${interviewId} with AI Service`);
@@ -315,6 +362,7 @@ class InterviewService {
       startTime: now,
       currentQuestionIndex: 1,
       currentQuestionId: qDocRef.id,
+      ...resumeUpdates,
       updatedAt: now
     };
     await interviewRef.update(updates);
@@ -420,11 +468,13 @@ class InterviewService {
 
     // 3. Evaluate answer and adapt next question using AI Service
     const aiService = getAIService();
+    const candidateProfile = interview.candidateProfileSnapshot || user.candidateProfile || {};
     const aiResult = await aiService.evaluateAnswerAndGenerateNextQuestion({
       job,
       currentQuestion,
       answer: answerText,
       previousQA,
+      candidateProfile,
       skillScores: interview.adaptiveState?.skillScores || {},
       skillStats: interview.adaptiveState?.skillStats || {},
       questionIndex: interview.currentQuestionIndex,
@@ -741,9 +791,13 @@ class InterviewService {
       };
     });
 
-    // Fetch candidate profile & application context for evidence comparison
+    // Fetch candidate profile & application context for evidence comparison (favoring immutable interview snapshot)
     const candSnap = await getCollection(COLLECTIONS.USERS).doc(interview.candidateId).get();
-    const candidate = candSnap.exists ? candSnap.data() : {};
+    const rawCandidate = candSnap.exists ? candSnap.data() : {};
+    const candidate = {
+      ...rawCandidate,
+      candidateProfile: interview.candidateProfileSnapshot || rawCandidate.candidateProfile || {}
+    };
 
     let application = {};
     if (interview.applicationId) {
@@ -773,6 +827,8 @@ class InterviewService {
       summary: evidenceReport.skillGapReport.summary,
       skills: evidenceReport.skillGapReport.skillAnalyses,
       skillAnalyses: evidenceReport.skillGapReport.skillAnalyses,
+      categories: evidenceReport.skillGapReport.categories || {},
+      breakdown: evidenceReport.skillGapReport.breakdown || {},
       skillsAssessedCount: evidenceReport.skillGapReport.skillsAssessedCount,
       skillsUnassessedCount: evidenceReport.skillGapReport.skillsUnassessedCount,
       skillsDemonstratedCount: evidenceReport.skillGapReport.skillsDemonstratedCount,
@@ -789,6 +845,9 @@ class InterviewService {
       candidateId: interview.candidateId,
       jobId: interview.jobId,
       recruiterId: interview.recruiterId,
+      resumeId: interview.resumeId || null,
+      resumeVersion: interview.resumeVersion || null,
+      resumeFilename: interview.resumeFilename || null,
       overallScore: evidenceReport.overallScore,
       summary: evidenceReport.summary,
       strengths: evidenceReport.strengths.map(s => s.point),
@@ -802,6 +861,7 @@ class InterviewService {
         levelDemonstrated: s.demonstratedProficiency || 'not_assessed',
         feedback: s.gapDescription
       })),
+      skillCategories: evidenceReport.skillGapReport.categories || {},
       adaptiveProgression: evidenceReport.adaptiveProgression,
       recruiterDecisionSupport: evidenceReport.recruiterDecisionSupport,
       integrityScore: evidenceReport.integrityReport.integrityScore,

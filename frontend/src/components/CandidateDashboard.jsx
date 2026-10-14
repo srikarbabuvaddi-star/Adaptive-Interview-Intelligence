@@ -24,11 +24,13 @@ export const CandidateDashboard = ({
   onStartInterview,
   onViewReport,
   onBrowseJobs,
+  onNavigateProfile,
   onOpenAuthModal
 }) => {
   const { user } = useAuth();
   const [interviews, setInterviews] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [activeResume, setActiveResume] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -49,12 +51,14 @@ export const CandidateDashboard = ({
     setLoading(true);
     setError(null);
     try {
-      const [interviewsData, appsData] = await Promise.all([
+      const [interviewsData, appsData, resumeData] = await Promise.all([
         interviewApi.listInterviews(),
-        user?.role === 'candidate' ? interviewApi.getMyApplications() : Promise.resolve([])
+        user?.role === 'candidate' ? interviewApi.getMyApplications() : Promise.resolve([]),
+        user?.role === 'candidate' ? interviewApi.getMyResume().catch(() => null) : Promise.resolve(null)
       ]);
       setInterviews(Array.isArray(interviewsData) ? interviewsData : []);
       setApplications(Array.isArray(appsData) ? appsData : []);
+      setActiveResume(resumeData);
     } catch (err) {
       console.warn('Failed to load user data:', err.message);
       setError(err.message);
@@ -157,6 +161,56 @@ export const CandidateDashboard = ({
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-space-sm bg-surface-container-lowest p-space-sm rounded-lg shadow-sm border border-outline-variant/30">
+            {/* Active Resume Status */}
+            {user?.role === 'candidate' && (
+              activeResume ? (
+                <div className="flex items-center gap-space-sm px-3 py-2 rounded bg-primary/5 border border-primary/20">
+                  <span className="material-symbols-outlined text-primary text-[22px]">description</span>
+                  <div className="flex flex-col pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-label-md text-label-md text-on-surface font-semibold truncate max-w-[140px]">
+                        {activeResume.originalName || activeResume.filename}
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 bg-primary/10 text-primary rounded">
+                        v{activeResume.currentVersion || 1}
+                      </span>
+                    </div>
+                    <span className="font-label-sm text-label-sm text-secondary">
+                      {(activeResume.extractedProfile?.skills || []).length} skills loaded
+                    </span>
+                  </div>
+                  {onNavigateProfile && (
+                    <button
+                      onClick={onNavigateProfile}
+                      className="text-xs text-primary hover:underline font-semibold ml-auto"
+                    >
+                      Manage
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-space-sm px-3 py-2 rounded bg-amber-500/10 border border-amber-500/30">
+                  <span className="material-symbols-outlined text-amber-600 text-[22px]">upload_file</span>
+                  <div className="flex flex-col pr-2">
+                    <span className="font-label-md text-label-md text-on-surface font-semibold">
+                      Resume Not Uploaded
+                    </span>
+                    <span className="font-label-sm text-label-sm text-secondary">
+                      Upload once, reuse everywhere
+                    </span>
+                  </div>
+                  {onNavigateProfile && (
+                    <button
+                      onClick={onNavigateProfile}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold ml-auto shadow-xs"
+                    >
+                      Upload
+                    </button>
+                  )}
+                </div>
+              )
+            )}
+
             <div className="flex items-center gap-space-sm px-3 py-2 rounded bg-surface-container-low">
               <span className="material-symbols-outlined text-primary text-[22px]">verified_user</span>
               <div className="flex flex-col pr-2">

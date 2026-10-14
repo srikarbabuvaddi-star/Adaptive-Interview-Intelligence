@@ -9,10 +9,12 @@ export const VoiceInterviewScreen = ({
   initialInterview,
   onComplete,
   onExit,
+  onNavigateProfile,
   onOpenAuthModal
 }) => {
   const { user } = useAuth();
   const [session, setSession] = useState(initialInterview || null);
+  const [activeResume, setActiveResume] = useState(null);
   const [interviewState, setInterviewState] = useState('READY'); // 'READY' | 'STARTING' | 'AI_SPEAKING' | 'LISTENING' | 'EVALUATING' | 'NEXT_QUESTION' | 'COMPLETED'
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [questionProgress, setQuestionProgress] = useState({ current: 1, total: job?.maxQuestions || 5 });
@@ -22,6 +24,14 @@ export const VoiceInterviewScreen = ({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
   const [errorMessage, setErrorMessage] = useState(null);
+
+  useEffect(() => {
+    if (user && user.role === 'candidate') {
+      interviewApi.getMyResume()
+        .then(res => setActiveResume(res))
+        .catch(err => console.warn('Could not fetch candidate resume:', err.message));
+    }
+  }, [user]);
 
   const { speak, cancel: cancelTTS, isSpeaking: isAISpeaking } = useVoiceSynthesis();
   const {
@@ -393,6 +403,60 @@ export const VoiceInterviewScreen = ({
             The AI examiner will speak questions aloud and evaluate your depth in real-time.
           </p>
 
+          {/* Active Resume State for Candidate */}
+          {user && user.role === 'candidate' && (
+            activeResume ? (
+              <div className="w-full max-w-xl p-4 rounded-xl bg-primary/5 border border-primary/20 flex items-center justify-between text-left">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[22px]">description</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-on-surface">
+                        {activeResume.originalName || activeResume.filename}
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-primary/10 text-primary">
+                        v{activeResume.currentVersion || 1}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-secondary">
+                      Active Profile Resume • {(activeResume.extractedProfile?.skills || []).length} claimed skills loaded for personalization
+                    </p>
+                  </div>
+                </div>
+                {onNavigateProfile && (
+                  <button
+                    onClick={onNavigateProfile}
+                    className="text-xs font-semibold text-primary hover:underline"
+                  >
+                    Change Resume
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="w-full max-w-xl p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-amber-600 text-[24px] mt-0.5">upload_file</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-800">Resume Upload Required</h4>
+                    <p className="text-[11px] text-secondary mt-0.5">
+                      Please upload your resume once on your profile page before beginning the AI interview.
+                    </p>
+                  </div>
+                </div>
+                {onNavigateProfile && (
+                  <button
+                    onClick={onNavigateProfile}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap transition-all shadow-xs"
+                  >
+                    Upload in Profile
+                  </button>
+                )}
+              </div>
+            )
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full pt-4 text-left">
             <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/20 space-y-1">
               <span className="material-symbols-outlined text-primary text-[20px]">record_voice_over</span>
@@ -422,10 +486,21 @@ export const VoiceInterviewScreen = ({
               </button>
             ) : (
               <button
-                onClick={handleStartInterview}
-                className="px-8 py-3.5 rounded-lg bg-primary-container hover:bg-primary text-on-primary font-body-md font-bold shadow-md transition-all flex items-center gap-2 group"
+                onClick={() => {
+                  if (user?.role === 'candidate' && !activeResume) {
+                    if (onNavigateProfile) onNavigateProfile();
+                    return;
+                  }
+                  handleStartInterview();
+                }}
+                disabled={user?.role === 'candidate' && !activeResume}
+                className={`px-8 py-3.5 rounded-lg font-body-md font-bold shadow-md transition-all flex items-center gap-2 group ${
+                  user?.role === 'candidate' && !activeResume
+                    ? 'bg-secondary/20 text-secondary cursor-not-allowed'
+                    : 'bg-primary-container hover:bg-primary text-on-primary'
+                }`}
               >
-                <span>Begin Voice Session</span>
+                <span>{user?.role === 'candidate' && !activeResume ? 'Resume Required to Begin' : 'Begin Voice Session'}</span>
                 <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">
                   arrow_forward
                 </span>

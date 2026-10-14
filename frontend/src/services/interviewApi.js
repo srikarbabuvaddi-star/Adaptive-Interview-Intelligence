@@ -216,6 +216,52 @@ export const interviewApi = {
       { reviewStatus, reviewNotes, falsePositive }
     );
     return res.data?.data;
+  },
+
+  // Resume Management & Extracted Profile
+  async uploadResume(file) {
+    const formData = new FormData();
+    formData.append('resume', file);
+    const res = await apiClient.post('/api/resumes/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return res.data?.data;
+  },
+
+  async getMyResume() {
+    const res = await apiClient.get('/api/resumes/me');
+    return res.data?.data;
+  },
+
+  async getMyResumeVersions() {
+    const res = await apiClient.get('/api/resumes/me/versions');
+    return res.data?.data || [];
+  },
+
+  async downloadMyResume(version = null) {
+    const url = version ? `/api/resumes/me/download?version=${version}` : '/api/resumes/me/download';
+    const res = await apiClient.get(url, { responseType: 'blob' });
+    return res.data;
+  },
+
+  async reprocessMyResume() {
+    const res = await apiClient.post('/api/resumes/me/reprocess');
+    return res.data?.data;
+  },
+
+  async getCandidateResume(candidateId) {
+    const res = await apiClient.get(`/api/resumes/candidate/${candidateId}`);
+    return res.data?.data;
+  },
+
+  async downloadCandidateResume(candidateId, version = null) {
+    const url = version
+      ? `/api/resumes/candidate/${candidateId}/download?version=${version}`
+      : `/api/resumes/candidate/${candidateId}/download`;
+    const res = await apiClient.get(url, { responseType: 'blob' });
+    return res.data;
   }
 };
 

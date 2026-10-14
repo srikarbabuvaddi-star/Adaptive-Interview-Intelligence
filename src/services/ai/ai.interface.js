@@ -42,6 +42,15 @@ class IAIEngineService {
   async generateFinalReport(params) {
     throw new Error('generateFinalReport() must be implemented');
   }
+
+  /**
+   * Extracts structured candidate profile from raw resume text
+   * @param {string} rawResumeText
+   * @returns {Promise<Object>}
+   */
+  async extractResumeProfile(rawResumeText) {
+    throw new Error('extractResumeProfile() must be implemented');
+  }
 }
 
 module.exports = IAIEngineService;

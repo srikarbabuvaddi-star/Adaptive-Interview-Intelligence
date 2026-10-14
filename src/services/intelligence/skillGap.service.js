@@ -218,6 +218,12 @@ class SkillGapService {
       }
     }
 
+    // Explicit role-specific skill categorization according to evaluation requirements
+    const demonstratedSkills = skillAnalyses.filter(s => s.assessmentStatus === ASSESSMENT_STATUS.DEMONSTRATED);
+    const claimedButUnvalidatedSkills = skillAnalyses.filter(s => s.resumeClaim?.isClaimed && s.assessmentStatus !== ASSESSMENT_STATUS.DEMONSTRATED);
+    const potentialGaps = skillAnalyses.filter(s => s.gapScore > 0 || s.assessmentStatus === ASSESSMENT_STATUS.NOT_DEMONSTRATED || s.assessmentStatus === ASSESSMENT_STATUS.PARTIALLY_DEMONSTRATED);
+    const untestedSkills = skillAnalyses.filter(s => s.assessmentStatus === ASSESSMENT_STATUS.NOT_ASSESSED);
+
     return {
       readinessScore,
       skillsAssessedCount: assessedCount,
@@ -226,6 +232,18 @@ class SkillGapService {
       totalRequiredSkills: requiredSkills.length,
       summary: `Evaluated ${assessedCount} skill(s) across ${qaList.length} interview questions. ${demonstratedCount} demonstrated, ${unassessedCount} unassessed. Readiness index: ${readinessScore}/100.`,
       skillAnalyses,
+      categories: {
+        demonstratedSkills: demonstratedSkills.map(s => s.skill),
+        claimedButUnvalidatedSkills: claimedButUnvalidatedSkills.map(s => s.skill),
+        potentialGaps: potentialGaps.map(s => s.skill),
+        untestedSkills: untestedSkills.map(s => s.skill)
+      },
+      breakdown: {
+        demonstrated: demonstratedSkills,
+        claimedButUnvalidated: claimedButUnvalidatedSkills,
+        potentialGaps,
+        untested: untestedSkills
+      },
       recommendedFollowUps
     };
   }

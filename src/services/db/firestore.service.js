@@ -10,7 +10,9 @@ const COLLECTIONS = {
   SKILL_EVALUATIONS: 'skill_evaluations',
   INTEGRITY_EVENTS: 'integrity_events',
   SKILL_GAP_REPORTS: 'skill_gap_reports',
-  INTERVIEW_REPORTS: 'interview_reports'
+  INTERVIEW_REPORTS: 'interview_reports',
+  RESUMES: 'resumes',
+  RESUME_VERSIONS: 'resume_versions'
 };
 
 const getCollection = (collectionName) => {
