@@ -2,6 +2,7 @@ const BaseAgent = require('./agent.interface');
 const { interviewerAgentInputSchema, interviewerAgentOutputSchema } = require('./schemas');
 const geminiCaller = require('./geminiCaller');
 const adaptiveLogicService = require('../intelligence/adaptiveLogic.service');
+const ragService = require('../rag/rag.service');
 const { QUESTION_DIFFICULTY } = require('../../constants/interviewStatus');
 const logger = require('../../utils/logger');
 
@@ -114,12 +115,25 @@ Guidelines:
 4. If candidate history is provided, build on what they have already proven or failed to answer.
 5. Provide 3-5 core expected technical concepts required in a complete, high-quality answer.`;
 
+    // Retrieve grounded reference context via RAG
+    const grounding = ragService.retrieveGroundedContext({
+      skill: targetSkill,
+      role: job?.title,
+      difficulty: targetDifficulty
+    });
+
+    if (grounding.references && grounding.references.length > 0) {
+      const citedDocIds = grounding.references.map(r => r.docId).join(', ');
+      selectionReason = `${selectionReason} (Grounded in approved reference knowledge: ${citedDocIds})`;
+    }
+
     const userPrompt = `
 Previously Asked Questions (DO NOT REPEAT):
 ${previousQuestions.length > 0 ? previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n') : 'None (First question)'}
 
 Interview History & Evaluations so far:
 ${historySummary || 'None'}
+${grounding.formattedPromptContext}
 
 Generate the next question as a pure JSON object with this exact shape:
 {

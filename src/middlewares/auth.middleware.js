@@ -71,6 +71,10 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
+const { resolveUserFromToken } = require('../mcp/auth');
+
 module.exports = {
-  requireAuth
+  requireAuth,
+  authenticate: requireAuth,
+  resolveUserFromToken
 };

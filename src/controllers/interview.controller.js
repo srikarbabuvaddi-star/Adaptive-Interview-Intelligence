@@ -1,4 +1,6 @@
 const interviewService = require('../services/interview.service');
+const voiceService = require('../services/voice/voice.service');
+const { emitToInterview, REALTIME_EVENTS } = require('../realtime/events');
 const ApiResponse = require('../utils/apiResponse');
 const ApiError = require('../utils/apiError');
 const { ROLES } = require('../constants/roles');
@@ -62,6 +64,9 @@ class InterviewController {
   async startInterview(req, res, next) {
     try {
       const result = await interviewService.startInterview(req.params.interviewId, req.user);
+      emitToInterview(req.params.interviewId, REALTIME_EVENTS.QUESTION_READY, {
+        question: result.currentQuestion
+      });
       return ApiResponse.success(res, result, 'Interview session started. First question generated.');
     } catch (error) {
       next(error);
@@ -69,15 +74,42 @@ class InterviewController {
   }
 
   async submitAnswer(req, res, next) {
+    const interviewId = req.params.interviewId;
+    let lockAcquired = false;
     try {
+      voiceService.acquireLock(interviewId, req.user.uid);
+      lockAcquired = true;
+
+      emitToInterview(interviewId, REALTIME_EVENTS.ANSWER_EVALUATING, {
+        questionId: req.body.questionId,
+        submittedAt: Date.now()
+      });
+
       const result = await interviewService.submitAnswer(
-        req.params.interviewId,
+        interviewId,
         req.user,
         req.body
       );
+
+      if (result.isInterviewComplete) {
+        emitToInterview(interviewId, REALTIME_EVENTS.INTERVIEW_COMPLETED, {
+          reportId: result.reportId,
+          overallScore: result.overallScore
+        });
+      } else {
+        emitToInterview(interviewId, REALTIME_EVENTS.EVALUATION_COMPLETED, {
+          evaluation: result.evaluation,
+          nextQuestion: result.nextQuestion
+        });
+      }
+
       return ApiResponse.success(res, result, 'Answer submitted and evaluated successfully');
     } catch (error) {
       next(error);
+    } finally {
+      if (lockAcquired) {
+        voiceService.releaseLock(interviewId);
+      }
     }
   }
 

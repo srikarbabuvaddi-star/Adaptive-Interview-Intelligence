@@ -9,6 +9,9 @@ const resumeRoutes = require('./resume.routes');
 const jobExplorerRoutes = require('./jobExplorer.routes');
 const mcpRoutes = require('../mcp/routes');
 const { a2aRoutes } = require('../a2a');
+const voiceRoutes = require('./voice.routes');
+const observabilityRoutes = require('../observability/routes');
+const queueRoutes = require('../queue/routes');
 const ApiResponse = require('../utils/apiResponse');
 
 const router = express.Router();
@@ -34,5 +37,8 @@ router.use('/resumes', resumeRoutes);
 router.use('/job-explorer', jobExplorerRoutes);
 router.use('/mcp', mcpRoutes);
 router.use('/a2a', a2aRoutes);
+router.use('/voice', voiceRoutes);
+router.use('/observability', observabilityRoutes);
+router.use('/queue', queueRoutes);
 
 module.exports = router;

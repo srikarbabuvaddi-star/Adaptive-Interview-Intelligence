@@ -4,6 +4,10 @@ const SkillGapAgent = require('./skillGap.agent');
 const FeedbackCoachAgent = require('./feedbackCoach.agent');
 const IntegrityReviewAgent = require('./integrityReview.agent');
 const { COLLECTIONS, getCollection, toTimestamp } = require('../db/firestore.service');
+const guardrailsService = require('../intelligence/guardrails.service');
+const skillGraphService = require('../intelligence/skillGraph.service');
+const tracer = require('../../observability/tracer');
+const metrics = require('../../observability/metrics');
 const ApiError = require('../../utils/apiError');
 const logger = require('../../utils/logger');
 const { INTERVIEW_STATUS, REVIEW_STATUS } = require('../../constants/interviewStatus');
@@ -161,6 +165,9 @@ class AgentOrchestrator {
       });
     }
 
+    // Apply AI Evaluation Guardrails validation
+    evaluationResult = guardrailsService.validateAndEnforceGuardrails(evaluationResult, answerText, currentQuestion);
+
     // 7. Persist Evaluation Record
     const evalRef = getCollection(COLLECTIONS.SKILL_EVALUATIONS).doc();
     const evaluationRecord = {
@@ -219,6 +226,19 @@ class AgentOrchestrator {
         roundNumber: interview.currentQuestionIndex,
         totalRounds: interview.totalQuestions
       });
+    }
+
+    // Cross-reference with Skill Knowledge Graph for prerequisite gaps
+    const graphRecommendation = skillGraphService.recommendNextTopic({
+      jobRequiredSkills: job.requiredSkills || [],
+      demonstratedSkills: skillGapFindings.demonstratedSkills || [],
+      weakSkills: skillGapFindings.gapSkills || []
+    });
+
+    if (graphRecommendation.isPrerequisiteProbe) {
+      logger.info(`[AgentOrchestrator] Skill graph identified root prerequisite gap: probing ${graphRecommendation.skill} for ${graphRecommendation.prerequisiteFor}`);
+      skillGapFindings.recommendedNextSkill = graphRecommendation.skill;
+      skillGapFindings.recommendedDifficulty = graphRecommendation.difficulty;
     }
 
     // 10. Check interview completion criteria
