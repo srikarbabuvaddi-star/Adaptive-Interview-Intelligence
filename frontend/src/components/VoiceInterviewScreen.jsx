@@ -26,6 +26,9 @@ export const VoiceInterviewScreen = ({
   const [errorMessage, setErrorMessage] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef(null);
+  const ttsTimeoutRef = useRef(null);
+  const quickResumeInputRef = useRef(null);
+  const [quickUploading, setQuickUploading] = useState(false);
 
   useEffect(() => {
     if (user && user.role === 'candidate') {
@@ -34,6 +37,25 @@ export const VoiceInterviewScreen = ({
         .catch(err => console.warn('Could not fetch candidate resume:', err.message));
     }
   }, [user]);
+
+  const handleQuickResumeUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setQuickUploading(true);
+    setErrorMessage(null);
+    try {
+      const uploaded = await interviewApi.uploadResume(file);
+      setActiveResume(uploaded);
+    } catch (err) {
+      setErrorMessage(`Resume upload failed: ${err.message}`);
+    } finally {
+      setQuickUploading(false);
+      if (quickResumeInputRef.current) {
+        quickResumeInputRef.current.value = '';
+      }
+    }
+  };
+
 
   const { speak, cancel: cancelTTS, isSpeaking: isAISpeaking } = useVoiceSynthesis();
   const {
@@ -181,21 +203,46 @@ export const VoiceInterviewScreen = ({
     };
   }, [cancelTTS, stopListening]);
 
-  // Speak AI Question
+  // Speak AI Question with unblock fallback
   const speakAIQuestion = useCallback(
     (questionText) => {
-      if (!questionText) return;
+      if (!questionText) {
+        setInterviewState('LISTENING');
+        return;
+      }
       stopListening();
       setInterviewState('AI_SPEAKING');
 
+      if (ttsTimeoutRef.current) {
+        clearTimeout(ttsTimeoutRef.current);
+      }
+
+      // Safety timeout: Ensure session unblocks even if SpeechSynthesis hangs
+      ttsTimeoutRef.current = setTimeout(() => {
+        setInterviewState((current) => {
+          if (current === 'AI_SPEAKING' || current === 'STARTING') {
+            if (isSTTSupported && !micPermissionDenied) {
+              startListening();
+            }
+            return 'LISTENING';
+          }
+          return current;
+        });
+      }, 12000);
+
       speak(questionText, {
+        onStart: () => {
+          setInterviewState('AI_SPEAKING');
+        },
         onEnd: () => {
+          if (ttsTimeoutRef.current) clearTimeout(ttsTimeoutRef.current);
           setInterviewState('LISTENING');
           if (isSTTSupported && !micPermissionDenied) {
             startListening();
           }
         },
         onError: () => {
+          if (ttsTimeoutRef.current) clearTimeout(ttsTimeoutRef.current);
           setInterviewState('LISTENING');
           if (isSTTSupported && !micPermissionDenied) {
             startListening();
@@ -205,6 +252,7 @@ export const VoiceInterviewScreen = ({
     },
     [speak, stopListening, startListening, isSTTSupported, micPermissionDenied]
   );
+
 
   const handleSkipAudioPrompt = useCallback(() => {
     cancelTTS();
@@ -273,9 +321,22 @@ export const VoiceInterviewScreen = ({
   };
 
   const handleSubmitAnswer = async () => {
-    const finalAnswer = transcript.trim();
+    // 1. Capture combined speech from both completed transcript and interim voice chunks
+    const combinedSpeech = (transcript.trim() + (interimTranscript.trim() ? ` ${interimTranscript.trim()}` : '')).trim();
+    const finalAnswer = combinedSpeech || transcript.trim();
+
     if (!finalAnswer || finalAnswer.length < 3) {
       setErrorMessage('Please provide an answer of at least a few words before submitting.');
+      return;
+    }
+
+    if (!session?.id) {
+      setErrorMessage('Active interview session not found. Please click "Begin Voice Session" or restart the interview.');
+      return;
+    }
+
+    if (!currentQuestion?.id) {
+      setErrorMessage('Active question could not be loaded. Please repeat the prompt or restart.');
       return;
     }
 
@@ -294,7 +355,7 @@ export const VoiceInterviewScreen = ({
         timeTakenSeconds
       });
 
-      if (response.evaluation) {
+      if (response?.evaluation) {
         setRecentEvaluation({
           score: response.evaluation.score,
           status: response.evaluation.status,
@@ -303,12 +364,12 @@ export const VoiceInterviewScreen = ({
         });
       }
 
-      if (response.isInterviewComplete) {
+      if (response?.isInterviewComplete) {
         setInterviewState('COMPLETED');
         if (onComplete) {
           onComplete(session.id);
         }
-      } else if (response.nextQuestion) {
+      } else if (response?.nextQuestion) {
         setInterviewState('NEXT_QUESTION');
         const nextQ = response.nextQuestion;
         setCurrentQuestion(nextQ);
@@ -322,6 +383,9 @@ export const VoiceInterviewScreen = ({
         setTimeout(() => {
           speakAIQuestion(nextQ.questionText);
         }, 1000);
+      } else {
+        setInterviewState('COMPLETED');
+        if (onComplete) onComplete(session.id);
       }
     } catch (err) {
       console.error('Answer submission error:', err);
@@ -331,6 +395,7 @@ export const VoiceInterviewScreen = ({
       setIsSubmitting(false);
     }
   };
+
 
   const handleConfirmEndSession = async () => {
     setShowExitConfirm(false);
@@ -528,24 +593,43 @@ export const VoiceInterviewScreen = ({
                 )}
               </div>
             ) : (
-              <div className="w-full max-w-xl p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="w-full max-w-xl p-4 rounded-xl bg-primary/5 border border-primary/20 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <input
+                  type="file"
+                  ref={quickResumeInputRef}
+                  onChange={handleQuickResumeUpload}
+                  accept=".pdf,.docx,.doc"
+                  className="hidden"
+                />
                 <div className="flex items-start gap-3">
-                  <span className="material-symbols-outlined text-amber-600 text-[24px] mt-0.5">upload_file</span>
+                  <span className="material-symbols-outlined text-primary text-[24px] mt-0.5">upload_file</span>
                   <div>
-                    <h4 className="text-xs font-bold text-amber-800">Resume Upload Required</h4>
+                    <h4 className="text-xs font-bold text-on-surface">Resume Optional for Practice</h4>
                     <p className="text-[11px] text-secondary mt-0.5">
-                      Please upload your resume once on your profile page before beginning the AI interview.
+                      Upload your resume for customized questions matched to your experience, or proceed with standard role benchmarks.
                     </p>
                   </div>
                 </div>
-                {onNavigateProfile && (
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={onNavigateProfile}
-                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap transition-all shadow-xs"
+                    type="button"
+                    onClick={() => quickResumeInputRef.current?.click()}
+                    disabled={quickUploading}
+                    className="px-3.5 py-1.5 bg-primary hover:bg-primary-container text-on-primary rounded-lg text-xs font-semibold whitespace-nowrap transition-all shadow-xs flex items-center gap-1.5"
                   >
-                    Upload in Profile
+                    <span className="material-symbols-outlined text-[16px]">{quickUploading ? 'sync' : 'cloud_upload'}</span>
+                    <span>{quickUploading ? 'Uploading...' : 'Quick Upload'}</span>
                   </button>
-                )}
+                  {onNavigateProfile && (
+                    <button
+                      type="button"
+                      onClick={onNavigateProfile}
+                      className="px-3 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-lg text-xs font-semibold whitespace-nowrap transition-all shadow-xs"
+                    >
+                      Profile
+                    </button>
+                  )}
+                </div>
               </div>
             )
           )}
@@ -579,21 +663,10 @@ export const VoiceInterviewScreen = ({
               </button>
             ) : (
               <button
-                onClick={() => {
-                  if (user?.role === 'candidate' && !activeResume) {
-                    if (onNavigateProfile) onNavigateProfile();
-                    return;
-                  }
-                  handleStartInterview();
-                }}
-                disabled={user?.role === 'candidate' && !activeResume}
-                className={`px-8 py-3.5 rounded-lg font-body-md font-bold shadow-md transition-all flex items-center gap-2 group ${
-                  user?.role === 'candidate' && !activeResume
-                    ? 'bg-secondary/20 text-secondary cursor-not-allowed'
-                    : 'bg-primary-container hover:bg-primary text-on-primary'
-                }`}
+                onClick={handleStartInterview}
+                className="px-8 py-3.5 rounded-lg font-body-md font-bold shadow-md transition-all flex items-center gap-2 group bg-primary hover:bg-primary-container text-on-primary"
               >
-                <span>{user?.role === 'candidate' && !activeResume ? 'Resume Required to Begin' : 'Begin Voice Session'}</span>
+                <span>{interviewState === 'STARTING' ? 'Starting Session...' : 'Begin Voice Session'}</span>
                 <span className="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">
                   arrow_forward
                 </span>

@@ -90,9 +90,11 @@ export const useVoiceSynthesis = () => {
         console.warn('SpeechSynthesis error:', event);
         setIsSpeaking(false);
         currentUtteranceRef.current = null;
-        if (onError) onError(event);
-        // Fallback: If TTS fails or is blocked, unblock the flow so candidate can proceed
-        if (onEnd) onEnd();
+        if (onError) {
+          onError(event);
+        } else if (onEnd) {
+          onEnd();
+        }
       };
 
       currentUtteranceRef.current = utterance;
