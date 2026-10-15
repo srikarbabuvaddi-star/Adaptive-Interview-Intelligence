@@ -132,7 +132,7 @@ export const JobExplorerScreen = ({
     }
 
     if (!activeResume) {
-      if (onNavigateProfile) onNavigateProfile();
+      setPrepareError('Please upload your resume in the Profile page first to enable tailored AI interviews for market jobs.');
       return;
     }
 

@@ -99,7 +99,7 @@ const MainApp = () => {
             onStartInterview={() => setView('INTERVIEW')}
             onNavigateExplorer={() => setView('JOB_EXPLORER')}
             onExploreRecruiter={() => setView('RECRUITER_PORTAL')}
-            onCandidateSetup={() => setView('PROFILE')}
+            onCandidateSetup={() => setView('SELECT_JOB')}
             onSelectRole={(roleTitle) => {
               setSelectedJob({
                 title: roleTitle,

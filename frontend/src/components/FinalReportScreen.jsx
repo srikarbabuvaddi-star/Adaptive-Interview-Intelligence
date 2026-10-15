@@ -80,9 +80,9 @@ export const FinalReportScreen = ({ interviewId, onRetake, onBackToJobs }) => {
   }
 
   const { report, skillGapReport, transcript, interviewMeta } = reportData;
-  const overallScoreNum = report?.overallScore != null ? Math.round(Number(report.overallScore)) : 85;
-  const hiringVerdict = (report?.hiringVerdict || report?.recommendation || 'hire').replace(/_/g, ' ').toUpperCase();
-  const conceptCoverage = report?.conceptCoveragePercentage != null ? Math.round(Number(report.conceptCoveragePercentage)) : 100;
+  const overallScoreNum = report?.overallScore != null ? Math.round(Number(report.overallScore)) : 0;
+  const hiringVerdict = (report?.hiringVerdict || report?.recommendation || 'evaluation complete').replace(/_/g, ' ').toUpperCase();
+  const conceptCoverage = report?.conceptCoveragePercentage != null ? Math.round(Number(report.conceptCoveragePercentage)) : 0;
   const recommendation = hiringVerdict;
 
   const getInitials = (name) => {
@@ -97,10 +97,10 @@ export const FinalReportScreen = ({ interviewId, onRetake, onBackToJobs }) => {
 
   const candidateInitials = getInitials(user?.displayName || interviewMeta?.candidateId || 'Candidate');
   const candidateName = user?.displayName || user?.email?.split('@')[0] || 'Candidate';
-  const roleTitle = interviewMeta?.jobTitle || 'Staff Backend Engineer';
+  const roleTitle = interviewMeta?.jobTitle || 'Adaptive Assessment';
   const durationMins = interviewMeta?.durationSeconds
     ? Math.round(interviewMeta.durationSeconds / 60)
-    : 24;
+    : 0;
 
   const integrityReport = report?.integrityReport;
   const integrityScore = integrityReport?.integrityScore != null
@@ -155,11 +155,11 @@ export const FinalReportScreen = ({ interviewId, onRetake, onBackToJobs }) => {
                     {roleTitle}
                   </span>
                   <span className="px-2.5 py-0.5 rounded bg-surface-container-low text-primary font-label-sm text-label-sm font-semibold">
-                    L6 Equivalent
+                    {interviewMeta?.experienceLevel ? `${interviewMeta.experienceLevel} Level` : 'Adaptive Track'}
                   </span>
                 </div>
                 <p className="font-body-md text-body-md text-secondary">
-                  Domain: High-Throughput Infrastructure &amp; Core Systems • Verified Audio Telemetry
+                  Assessment Track: {roleTitle} • Verified Telemetry
                 </p>
               </div>
             </div>
@@ -255,7 +255,7 @@ export const FinalReportScreen = ({ interviewId, onRetake, onBackToJobs }) => {
                 </span>
                 <div className="flex items-baseline gap-1">
                   <span className="font-metric-tabular text-metric-tabular text-on-surface font-bold">
-                    {transcript ? transcript.length : 5}
+                    {transcript ? transcript.length : 0}
                   </span>
                   <span className="text-secondary font-label-md text-label-md">Deep Branches Hit</span>
                 </div>
