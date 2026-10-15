@@ -27,3 +27,8 @@ Thumbs.db
 
 # Uploaded Files & Resumes
 storage/
+
+# Build artifacts
+dist/
+**/dist/
+

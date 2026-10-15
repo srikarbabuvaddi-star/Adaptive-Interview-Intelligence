@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import interviewApi from '../services/interviewApi';
+import interviewApi, { getWebSocketUrl } from '../services/interviewApi';
 import useVoiceSynthesis from '../hooks/useVoiceSynthesis';
 import useSpeechRecognition from '../hooks/useSpeechRecognition';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +24,8 @@ export const VoiceInterviewScreen = ({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
   const [errorMessage, setErrorMessage] = useState(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef(null);
 
   useEffect(() => {
     if (user && user.role === 'candidate') {
@@ -86,6 +88,90 @@ export const VoiceInterviewScreen = ({
       window.removeEventListener('focus', handleFocus);
     };
   }, [session]);
+
+  // Real-Time WebSocket Connection & Sync
+  useEffect(() => {
+    if (!session?.id) return;
+    const token = interviewApi.getToken();
+    if (!token) return;
+
+    let ws;
+    try {
+      const wsUrl = getWebSocketUrl(token);
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setWsConnected(true);
+        ws.send(
+          JSON.stringify({
+            type: 'join_interview',
+            payload: { interviewId: session.id }
+          })
+        );
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'interview:state_update' && msg.payload?.state) {
+            // sync remote updates
+          }
+        } catch (_) {}
+      };
+
+      ws.onclose = () => {
+        setWsConnected(false);
+      };
+
+      ws.onerror = () => {
+        setWsConnected(false);
+      };
+    } catch (err) {
+      console.warn('Real-time WebSocket initialization notice:', err);
+    }
+
+    return () => {
+      if (ws) {
+        try {
+          ws.close();
+        } catch (_) {}
+      }
+      wsRef.current = null;
+      setWsConnected(false);
+    };
+  }, [session?.id]);
+
+  // Broadcast Real-time Speech Transcripts over WebSocket
+  useEffect(() => {
+    if (wsRef.current && wsConnected && (transcript || interimTranscript)) {
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'speech:partial',
+            payload: {
+              transcript: transcript + (interimTranscript ? ` ${interimTranscript}` : ''),
+              isFinal: false
+            }
+          })
+        );
+      } catch (_) {}
+    }
+  }, [transcript, interimTranscript, wsConnected]);
+
+  // Broadcast Interview State Changes over WebSocket
+  useEffect(() => {
+    if (wsRef.current && wsConnected && session?.id) {
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'voice:state_change',
+            payload: { state: interviewState }
+          })
+        );
+      } catch (_) {}
+    }
+  }, [interviewState, wsConnected, session?.id]);
 
   // Audio cleanup on unmount
   useEffect(() => {
@@ -292,7 +378,14 @@ export const VoiceInterviewScreen = ({
                 <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
                 <span>Telemetry Synchronized</span>
               </span>
+              {wsConnected && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-label-sm font-label-sm bg-surface-container-lowest text-primary shadow-sm border border-outline-variant/30">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="font-semibold text-emerald-600">WebSocket Live</span>
+                </span>
+              )}
             </div>
+
             <div className="flex items-baseline gap-space-sm flex-wrap">
               <h1 className="font-headline-md text-headline-md text-on-surface tracking-tight font-bold">
                 {user?.displayName || user?.email?.split('@')[0] || 'Candidate'}

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:5000');
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -290,7 +290,75 @@ export const interviewApi = {
   async prepareMarketJobInterview(jobData) {
     const res = await apiClient.post('/api/job-explorer/prepare-interview', { jobData });
     return res.data?.data;
+  },
+
+  // Real-Time Voice AI API
+  async transcribeAudio(fileOrBlob) {
+    const formData = new FormData();
+    formData.append('audio', fileOrBlob);
+    const res = await apiClient.post('/api/voice/transcribe', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return res.data?.data;
+  },
+
+  async getVoiceSessionState(interviewId) {
+    const res = await apiClient.get(`/api/voice/session/${interviewId}/state`);
+    return res.data?.data;
+  },
+
+  async updateVoiceSessionState(interviewId, state, metadata = {}) {
+    const res = await apiClient.post(`/api/voice/session/${interviewId}/state`, {
+      state,
+      metadata
+    });
+    return res.data?.data;
+  },
+
+  async synthesizeVoice({ text, voice = 'en-US-Neural2-F', rate = 1.0 }) {
+    const res = await apiClient.post('/api/voice/synthesize', { text, voice, rate });
+    return res.data?.data;
+  },
+
+  // Observability & Diagnostics
+  async getObservabilityMetrics() {
+    const res = await apiClient.get('/api/observability/metrics');
+    return res.data?.data;
+  },
+
+  async getObservabilityTraces(params = {}) {
+    const res = await apiClient.get('/api/observability/traces', { params });
+    return res.data?.data;
+  },
+
+  // Resilient Background Job Queue
+  async getQueueJobStatus(jobId) {
+    const res = await apiClient.get(`/api/queue/jobs/${jobId}`);
+    return res.data?.data;
   }
 };
 
+/**
+ * Resolves the WebSocket URL compatible with local development and production deployments
+ */
+export const getWebSocketUrl = (token) => {
+  const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  const protocol = isHttps ? 'wss:' : 'ws:';
+  const apiBase = import.meta.env.VITE_API_BASE_URL;
+
+  let host = typeof window !== 'undefined' ? window.location.host : 'localhost:5000';
+  if (apiBase && apiBase.startsWith('http')) {
+    try {
+      const parsed = new URL(apiBase);
+      host = parsed.host;
+    } catch {
+      // fallback to current window host
+    }
+  }
+
+  const query = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${protocol}//${host}/ws${query}`;
+};
+
 export default interviewApi;
+
