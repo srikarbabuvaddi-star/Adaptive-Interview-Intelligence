@@ -20,7 +20,8 @@ class InterviewController {
         candidateId,
         recruiterId: isCandidate ? null : req.user.uid,
         applicationId: req.body.applicationId,
-        targetRole: req.body.targetRole
+        targetRole: req.body.targetRole,
+        maxQuestions: req.body.maxQuestions
       });
 
       return ApiResponse.created(res, interview, 'Interview session created successfully');

@@ -49,7 +49,9 @@ class AgentOrchestrator {
     user,
     questionId,
     answerText,
-    timeTakenSeconds = 30
+    timeTakenSeconds = 30,
+    useA2A = false,
+    correlationId
   }) {
     // 1. Fetch and verify interview ownership
     const interviewRef = getCollection(COLLECTIONS.INTERVIEWS).doc(interviewId);
@@ -134,14 +136,30 @@ class AgentOrchestrator {
       });
 
     // 6. Invoke Agent 2: Answer Evaluation Agent
-    logger.info(`[AgentOrchestrator] Invoking AnswerEvaluationAgent for question ${currentQuestion.questionIndex}`);
-    const evaluationResult = await this.evaluationAgent.execute({
-      question: currentQuestion,
-      answer: answerText,
-      job,
-      candidateProfile,
-      previousQA
-    });
+    logger.info(`[AgentOrchestrator] Invoking AnswerEvaluationAgent for question ${currentQuestion.questionIndex} (A2A: ${useA2A})`);
+    let evaluationResult;
+    if (useA2A) {
+      const evalTask = await this.getA2AClient().submitTask('evaluation-agent', {
+        contextId: interviewId,
+        correlationId,
+        input: {
+          question: currentQuestion,
+          answer: answerText,
+          job,
+          candidateProfile,
+          previousQA
+        }
+      });
+      evaluationResult = evalTask.output;
+    } else {
+      evaluationResult = await this.evaluationAgent.execute({
+        question: currentQuestion,
+        answer: answerText,
+        job,
+        candidateProfile,
+        previousQA
+      });
+    }
 
     // 7. Persist Evaluation Record
     const evalRef = getCollection(COLLECTIONS.SKILL_EVALUATIONS).doc();
@@ -178,14 +196,30 @@ class AgentOrchestrator {
     const allEvaluations = allEvaluationsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
     // 9. Invoke Agent 3: Skill-Gap Analysis Agent
-    logger.info(`[AgentOrchestrator] Invoking SkillGapAgent to update skill gap findings`);
-    const skillGapFindings = await this.skillGapAgent.execute({
-      job,
-      candidateProfile,
-      evaluations: allEvaluations,
-      roundNumber: interview.currentQuestionIndex,
-      totalRounds: interview.totalQuestions
-    });
+    logger.info(`[AgentOrchestrator] Invoking SkillGapAgent to update skill gap findings (A2A: ${useA2A})`);
+    let skillGapFindings;
+    if (useA2A) {
+      const gapTask = await this.getA2AClient().submitTask('skill-gap-agent', {
+        contextId: interviewId,
+        correlationId,
+        input: {
+          job,
+          candidateProfile,
+          evaluations: allEvaluations,
+          roundNumber: interview.currentQuestionIndex,
+          totalRounds: interview.totalQuestions
+        }
+      });
+      skillGapFindings = gapTask.output;
+    } else {
+      skillGapFindings = await this.skillGapAgent.execute({
+        job,
+        candidateProfile,
+        evaluations: allEvaluations,
+        roundNumber: interview.currentQuestionIndex,
+        totalRounds: interview.totalQuestions
+      });
+    }
 
     // 10. Check interview completion criteria
     const isCompleted = interview.currentQuestionIndex >= interview.totalQuestions;
@@ -218,24 +252,50 @@ class AgentOrchestrator {
       currentSkillStats[currSkill].difficulty = skillGapFindings.recommendedDifficulty;
 
       // Invoke Agent 1: Interviewer Agent for adaptive next question
-      logger.info(`[AgentOrchestrator] Invoking InterviewerAgent for adaptive Question ${interview.currentQuestionIndex + 1}`);
-      const nextQuestionResult = await this.interviewerAgent.execute({
-        job,
-        candidateProfile,
-        stage: 'adaptive',
-        history: compiledHistory,
-        skillEvidence: {
-          skillStats: currentSkillStats,
-          skillScores: {
-            ...(interview.adaptiveState?.skillScores || {}),
-            [currSkill]: evaluationResult.score
+      logger.info(`[AgentOrchestrator] Invoking InterviewerAgent for adaptive Question ${interview.currentQuestionIndex + 1} (A2A: ${useA2A})`);
+      let nextQuestionResult;
+      if (useA2A) {
+        const qTask = await this.getA2AClient().submitTask('interviewer-agent', {
+          contextId: interviewId,
+          correlationId,
+          input: {
+            job,
+            candidateProfile,
+            stage: 'adaptive',
+            history: compiledHistory,
+            skillEvidence: {
+              skillStats: currentSkillStats,
+              skillScores: {
+                ...(interview.adaptiveState?.skillScores || {}),
+                [currSkill]: evaluationResult.score
+              },
+              targetNextSkill: skillGapFindings.recommendedNextSkill,
+              targetDifficulty: skillGapFindings.recommendedDifficulty
+            },
+            questionIndex: interview.currentQuestionIndex + 1,
+            maxQuestions: interview.totalQuestions
+          }
+        });
+        nextQuestionResult = qTask.output;
+      } else {
+        nextQuestionResult = await this.interviewerAgent.execute({
+          job,
+          candidateProfile,
+          stage: 'adaptive',
+          history: compiledHistory,
+          skillEvidence: {
+            skillStats: currentSkillStats,
+            skillScores: {
+              ...(interview.adaptiveState?.skillScores || {}),
+              [currSkill]: evaluationResult.score
+            },
+            targetNextSkill: skillGapFindings.recommendedNextSkill,
+            targetDifficulty: skillGapFindings.recommendedDifficulty
           },
-          targetNextSkill: skillGapFindings.recommendedNextSkill,
-          targetDifficulty: skillGapFindings.recommendedDifficulty
-        },
-        questionIndex: interview.currentQuestionIndex + 1,
-        maxQuestions: interview.totalQuestions
-      });
+          questionIndex: interview.currentQuestionIndex + 1,
+          maxQuestions: interview.totalQuestions
+        });
+      }
 
       // Save Next Question
       const nextQRef = getCollection(COLLECTIONS.INTERVIEW_QUESTIONS).doc();
@@ -300,7 +360,9 @@ class AgentOrchestrator {
         interviewId,
         user,
         job,
-        reason: 'candidate_completed'
+        reason: 'candidate_completed',
+        useA2A,
+        correlationId
       });
 
       return {
@@ -317,7 +379,7 @@ class AgentOrchestrator {
   /**
    * Finalizes an interview session and synthesizes reports using Agents 3, 4, and 5
    */
-  async finalizeInterviewSession({ interviewId, user, job, reason = 'candidate_completed' }) {
+  async finalizeInterviewSession({ interviewId, user, job, reason = 'candidate_completed', useA2A = false, correlationId }) {
     const interviewRef = getCollection(COLLECTIONS.INTERVIEWS).doc(interviewId);
     const interviewSnap = await interviewRef.get();
     if (!interviewSnap.exists) {
@@ -382,26 +444,60 @@ class AgentOrchestrator {
     });
 
     // 2. Invoke Agent 3: Skill Gap Analysis Agent
-    logger.info(`[AgentOrchestrator] Invoking SkillGapAgent for final skill synthesis`);
-    const skillGapReport = await this.skillGapAgent.execute({
-      job,
-      candidateProfile: candidate.candidateProfile,
-      evaluations,
-      roundNumber: questions.length,
-      totalRounds: interview.totalQuestions
-    });
+    logger.info(`[AgentOrchestrator] Invoking SkillGapAgent for final skill synthesis (A2A: ${useA2A})`);
+    let skillGapReport;
+    if (useA2A) {
+      const gapTask = await this.getA2AClient().submitTask('skill-gap-agent', {
+        contextId: interviewId,
+        correlationId,
+        input: {
+          job,
+          candidateProfile: candidate.candidateProfile,
+          evaluations,
+          roundNumber: questions.length,
+          totalRounds: interview.totalQuestions
+        }
+      });
+      skillGapReport = gapTask.output;
+    } else {
+      skillGapReport = await this.skillGapAgent.execute({
+        job,
+        candidateProfile: candidate.candidateProfile,
+        evaluations,
+        roundNumber: questions.length,
+        totalRounds: interview.totalQuestions
+      });
+    }
 
     // 3. Invoke Agent 4: Feedback & Career Coach Agent
-    logger.info(`[AgentOrchestrator] Invoking FeedbackCoachAgent for comprehensive report synthesis`);
-    const feedbackReport = await this.feedbackCoachAgent.execute({
-      job,
-      candidate,
-      evaluations,
-      qaList,
-      skillGapReport,
-      integrityReport,
-      isCompleted: true
-    });
+    logger.info(`[AgentOrchestrator] Invoking FeedbackCoachAgent for comprehensive report synthesis (A2A: ${useA2A})`);
+    let feedbackReport;
+    if (useA2A) {
+      const fbTask = await this.getA2AClient().submitTask('feedback-coach-agent', {
+        contextId: interviewId,
+        correlationId,
+        input: {
+          job,
+          candidate,
+          evaluations,
+          qaList,
+          skillGapReport,
+          integrityReport,
+          isCompleted: true
+        }
+      });
+      feedbackReport = fbTask.output;
+    } else {
+      feedbackReport = await this.feedbackCoachAgent.execute({
+        job,
+        candidate,
+        evaluations,
+        qaList,
+        skillGapReport,
+        integrityReport,
+        isCompleted: true
+      });
+    }
 
     const allSkillsList = [
       ...skillGapReport.demonstratedSkills.map(s => ({
@@ -615,6 +711,58 @@ class AgentOrchestrator {
   async createMcpClientForUser(user) {
     const { createMcpAgentClient } = require('../../mcp/client');
     return createMcpAgentClient({ user });
+  }
+
+  /**
+   * Helper to instantiate or retrieve the A2A protocol client
+   */
+  getA2AClient() {
+    if (!this.a2aClient) {
+      const { createA2AClient } = require('../../a2a/client');
+      this.a2aClient = createA2AClient();
+    }
+    return this.a2aClient;
+  }
+
+  /**
+   * Orchestrates the 4-step interview processing cycle strictly via genuine A2A protocol tasks
+   */
+  async processAnswerWithA2A(params) {
+    return this.processAnswerAndDetermineNextStep({
+      ...params,
+      useA2A: true
+    });
+  }
+
+  /**
+   * Generates opening interview question via A2A protocol task delegation
+   */
+  async generateFirstQuestionWithA2A({ job, candidateProfile = {}, maxQuestions = 5, correlationId }) {
+    logger.info(`[AgentOrchestrator] Invoking InterviewerAgent via A2A protocol task delegation for opening question`);
+    const task = await this.getA2AClient().submitTask('interviewer-agent', {
+      contextId: '',
+      correlationId,
+      input: {
+        job,
+        candidateProfile,
+        stage: 'initial',
+        history: [],
+        skillEvidence: {},
+        questionIndex: 1,
+        maxQuestions
+      }
+    });
+    return task.output;
+  }
+
+  /**
+   * Finalizes interview session via A2A protocol task delegation
+   */
+  async finalizeInterviewWithA2A(params) {
+    return this.finalizeInterviewSession({
+      ...params,
+      useA2A: true
+    });
   }
 }
 

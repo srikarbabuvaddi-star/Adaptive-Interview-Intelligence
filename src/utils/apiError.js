@@ -46,6 +46,10 @@ class ApiError extends Error {
     return new ApiError(429, message, 'TOO_MANY_REQUESTS', details);
   }
 
+  static gatewayTimeout(message = 'Gateway timeout: Upstream agent did not respond in time', details = null) {
+    return new ApiError(504, message, 'GATEWAY_TIMEOUT', details);
+  }
+
   static internal(message = 'Internal server error', details = null) {
     return new ApiError(500, message, 'INTERNAL_SERVER_ERROR', details);
   }

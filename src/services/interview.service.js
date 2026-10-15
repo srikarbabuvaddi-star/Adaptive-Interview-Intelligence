@@ -14,7 +14,7 @@ class InterviewService {
   /**
    * Creates an interview session
    */
-  async createInterview({ jobId, candidateId, recruiterId, applicationId, targetRole }) {
+  async createInterview({ jobId, candidateId, recruiterId, applicationId, targetRole, maxQuestions }) {
     // 0. If targetRole is specified without a jobId, create a tailored assessment job
     if (!jobId && targetRole) {
       const jobsCol = getCollection(COLLECTIONS.JOBS);
@@ -148,7 +148,7 @@ class InterviewService {
       status: INTERVIEW_STATUS.SCHEDULED,
       currentQuestionIndex: 0,
       currentQuestionId: null,
-      totalQuestions: job.maxQuestions || 5,
+      totalQuestions: (maxQuestions && Number(maxQuestions) > 0) ? Number(maxQuestions) : (job.maxQuestions || 5),
       startTime: null,
       endTime: null,
       durationSeconds: null,

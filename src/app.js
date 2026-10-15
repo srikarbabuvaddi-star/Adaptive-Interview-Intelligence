@@ -38,6 +38,18 @@ if (env.NODE_ENV !== 'test') {
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
+// Root A2A Discovery Protocol Endpoint
+const { registry: a2aRegistry } = require('./a2a');
+app.get(['/.well-known/agent.json', '/.well-known/agents/:agentId.json'], (req, res) => {
+  const { agentId } = req.params;
+  if (agentId) {
+    const card = a2aRegistry.getAgentCard(agentId);
+    if (!card) return res.status(404).json({ error: 'Agent not found' });
+    return res.json(card);
+  }
+  return res.json(a2aRegistry.getDirectory());
+});
+
 // Apply rate limiter to /api
 app.use('/api', apiLimiter);
 

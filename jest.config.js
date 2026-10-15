@@ -3,5 +3,8 @@ module.exports = {
   testMatch: ['**/tests/**/*.test.js'],
   verbose: true,
   testTimeout: 20000,
-  clearMocks: true
+  clearMocks: true,
+  moduleNameMapper: {
+    '^jose$': '<rootDir>/tests/mocks/joseMock.js'
+  }
 };
