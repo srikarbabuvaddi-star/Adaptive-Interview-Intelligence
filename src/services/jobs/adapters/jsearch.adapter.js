@@ -6,7 +6,7 @@ const logger = require('../../../utils/logger');
 class JSearchAdapter extends JobProviderInterface {
   constructor(config = {}) {
     super();
-    this.apiKey = config.apiKey || env.JSEARCH_API_KEY;
+    this.apiKey = config.apiKey !== undefined ? config.apiKey : env.JSEARCH_API_KEY;
     this.apiHost = config.apiHost || env.JSEARCH_API_HOST || 'jsearch.p.rapidapi.com';
     this.baseUrl = 'https://jsearch.p.rapidapi.com';
     this.timeoutMs = config.timeoutMs || 8000;

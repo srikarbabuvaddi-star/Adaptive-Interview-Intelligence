@@ -6,8 +6,8 @@ const logger = require('../../../utils/logger');
 class AdzunaAdapter extends JobProviderInterface {
   constructor(config = {}) {
     super();
-    this.appId = config.appId || env.ADZUNA_APP_ID;
-    this.appKey = config.appKey || env.ADZUNA_APP_KEY;
+    this.appId = config.appId !== undefined ? config.appId : env.ADZUNA_APP_ID;
+    this.appKey = config.appKey !== undefined ? config.appKey : env.ADZUNA_APP_KEY;
     this.baseUrl = 'https://api.adzuna.com/v1/api/jobs';
     this.timeoutMs = config.timeoutMs || 8000;
   }
